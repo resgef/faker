@@ -43,16 +43,15 @@ class Command(BaseCommand):
                 for future in concurrent.futures.as_completed(future_to_sessid):
                     sessid = future_to_sessid[future]
                     if future.exception():
-                        logger.error(str(future.exception()))
+                        logger.error('exception: ' + str(future.exception()))
                     if future.result():
                         logger.debug('session#{} processing complete'.format(sessid))
                         sessionds_done.append(sessid)
-                        # del session_jobs[sid]
+                        del session_jobs[sessid]
             end_time = timer()
             logger.perf('sessions processed: {}, time taken: {} seconds'.format(len(sessionds_done), end_time - start_time))
 
             if len(session_jobs):
                 r.set(settings.REDIS_KEY_OUTCALL_SESSION, json.dumps(session_jobs))
             else:
-                # r.delete(settings.REDIS_KEY_OUTCALL_SESSION)
-                pass
+                r.delete(settings.REDIS_KEY_OUTCALL_SESSION)

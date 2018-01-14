@@ -10,17 +10,17 @@ TROPO_ACCOUNTS = [
                 'webhook': 'http://localhost:8000/cdrhook',
                 'name': 'asrivr ngrok',
             },
-            {
-                'applicationId': '5174138',
-                'api_key_voice': '564e44774257594f6f6359497a6e4767656153577769414c7051487a4d6342556d4f504d7447517451536275',
-                'voice_script': 'http://asrivr.dev.concitus.com/index.json',
-                'text_script': '',
-                'webhook': 'http://asrivr.dev.concitus.com/cdrhook',
-                'name': 'asrivr dokku'
-            }
+            # {
+            #     'applicationId': '5174138',
+            #     'api_key_voice': '564e44774257594f6f6359497a6e4767656153577769414c7051487a4d6342556d4f504d7447517451536275',
+            #     'voice_script': 'http://asrivr.dev.concitus.com/index.json',
+            #     'text_script': '',
+            #     'webhook': 'http://asrivr.dev.concitus.com/cdrhook',
+            #     'name': 'asrivr dokku'
+            # }
         ]
     },
 ]
 
-ISO8601 = '%Y-%m-%dT%H:%M:%S.%f%z'  # which is tropo timestamp format
-SESSION_JOB_THREAD_LIMIT = 300
+ISO8601 = '%Y-%m-%dT%H:%M:%S.%fZ'  # which is tropo timestamp format
+SESSION_JOB_THREAD_LIMIT = 200

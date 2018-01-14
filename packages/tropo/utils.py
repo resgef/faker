@@ -8,6 +8,8 @@ from .settings import ISO8601
 import requests
 import os
 import logging
+import sys
+from django.conf import settings
 
 logger = logging.getLogger('tropo_outcall')
 
@@ -159,18 +161,23 @@ def handle_sessionjob(sessjob: dict):
         }
     }
     session_data_json = json.dumps(session_data)
-    s = requests.Session()
-    req = requests.Request('POST', voice_script)
-    prepped = req.prepare()
-    prepped.body = session_data_json
-    prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
-    resp = s.send(prepped)
+    # s = requests.Session()
+    # req = requests.Request('POST', voice_script)
+    # prepped = req.prepare()
+    # prepped.body = session_data_json
+    # prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
+    # # resp = s.send(prepped)
+    resp = requests.post(voice_script, data=session_data_json)
     if resp.status_code != 200:
-        # print(log_prefix + 'data callback failed: clients web server error.'.format(sessionid))
+        # dump_file = os.path.join(settings.BASE_DIR, 'dump', '{}_sessiondata'.format(sessionid))
+        # with open(dump_file, 'w') as f:
+        #     f.write(resp.text)
+        #     print('response dumped into {}'.format(f.name))
         raise TropoFakerWebhookException(
             log_prefix + 'session data callback failed: http status code: {}, session data: {}, response: {}'.format(resp.status_code, session_data, resp.content))
     instructions_json = resp.content.decode('utf-8')
-    instructions = json.load(instructions_json)
+    print(instructions_json)
+    instructions = json.loads(instructions_json)
 
     # call and ask1
     call_ins = get_call_instructions(instructions)
@@ -207,18 +214,20 @@ def handle_sessionjob(sessjob: dict):
         }
     }
     event_result_json = json.dumps(event_result)
-    s = requests.Session()
-    req = requests.Request('POST', ask1_event_callback_url)
-    prepped = req.prepare()
-    prepped.body = event_result_json
-    prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
-    resp = s.send(prepped)
+    # s = requests.Session()
+    # req = requests.Request('POST', ask1_event_callback_url)
+    # prepped = req.prepare()
+    # prepped.body = event_result_json
+    # prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
+    # resp = s.send(prepped)
+    resp = requests.post(ask1_event_callback_url, data=event_result_json)
     if resp.status_code != 200:
         # print(log_prefix + 'cannot send back ask1 continue event data, http status code: {}'.format(resp.status_code))
         raise TropoFakerWebhookException(
             log_prefix + 'cannot send back ask1 continue event data, http status code: {}, event data: {}, response: {}'.format(resp.status_code, event_result, resp.content))
     instructions_json = resp.content.decode('utf-8')
-    instructions = json.load(instructions_json)
+    print(instructions_json)
+    instructions = json.loads(instructions_json)
 
     # ask2
     ask2_ins = get_ask_instructions(instructions)
@@ -250,18 +259,19 @@ def handle_sessionjob(sessjob: dict):
         }
     }
     ask2_event_result_json = json.dumps(ask2_event_result)
-    s = requests.Session()
-    req = requests.Request('POST', ask2_event_callback_url)
-    prepped = req.prepare()
-    prepped.body = ask2_event_result_json
-    prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
-    resp = s.send(prepped)
+    # s = requests.Session()
+    # req = requests.Request('POST', ask2_event_callback_url)
+    # prepped = req.prepare()
+    # prepped.body = ask2_event_result_json
+    # prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
+    # resp = s.send(prepped)
+    resp = requests.post(ask2_event_callback_url, data=ask2_event_result_json)
     if resp.status_code != 200:
-        # print(log_prefix + 'failed ask2 continue event hook. http status code: {}'.format(resp.status_code))
         raise TropoFakerWebhookException(
             log_prefix + 'failed ask2 continue event hook. http status code: {}, event data: {}, response: {}'.format(resp.status_code, ask2_event_result, resp.content))
     instructions_json = resp.content.decode('utf-8')
-    instructions = json.load(instructions_json)
+    print(instructions_json)
+    instructions = json.loads(instructions_json)
 
     # ask3
     ask3_ins = get_ask_instructions(instructions)
@@ -293,18 +303,19 @@ def handle_sessionjob(sessjob: dict):
         }
     }
     event_result_json = json.dumps(event_result)
-    s = requests.Session()
-    req = requests.Request('POST', ask3_event_callback_url)
-    prepped = req.prepare()
-    prepped.body = event_result_json
-    prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
-    resp = s.send(prepped)
+    # s = requests.Session()
+    # req = requests.Request('POST', ask3_event_callback_url)
+    # prepped = req.prepare()
+    # prepped.body = event_result_json
+    # prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
+    # resp = s.send(prepped)
+    resp = requests.post(ask3_event_callback_url, data=event_result_json)
     if resp.status_code != 200:
-        # print(log_prefix + 'failed ask3 continue event hook. http status code {}'.format(resp.status_code))
         raise TropoFakerWebhookException(
             log_prefix + 'failed ask3 continue event hook. http status code {}, event data {}, response: {}'.format(resp.status_code, event_result, resp.content))
     instructions_json = resp.content.decode('utf-8')
-    instructions = json.load(instructions_json)
+    print(instructions_json)
+    instructions = json.loads(instructions_json)
 
     # transfer
     transfer_start_timestamp = session_create_timestamp + timedelta(seconds=ask3_session_duration)
@@ -342,14 +353,14 @@ def handle_sessionjob(sessjob: dict):
         }
     }
     event_result_json = json.dumps(event_result)
-    s = requests.Session()
-    req = requests.Request('POST', transfer_continue_callback_url)
-    prepped = req.prepare()
-    prepped.body = event_result_json
-    prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
-    resp = s.send(prepped)
+    # s = requests.Session()
+    # req = requests.Request('POST', transfer_continue_callback_url)
+    # prepped = req.prepare()
+    # prepped.body = event_result_json
+    # prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
+    # resp = s.send(prepped)
+    resp = requests.post(transfer_continue_callback_url, data=event_result_json)
     if resp.status_code != 200:
-        # print(log_prefix + 'failed transfer continue event hook, http status code {}'.format(resp.status_code))
         raise TropoFakerWebhookException(
             log_prefix + 'failed transfer continue event hook, http status code {}, event data {}, response {}'.format(resp.status_code, event_result, resp.content))
     # now send the cdrs
@@ -384,12 +395,13 @@ def handle_sessionjob(sessjob: dict):
         "event": "cdrCreated"
     }
     call_cdr_json = json.dumps(call_cdr)
-    s = requests.Session()
-    req = requests.Request('POST', get_tropo_webhook(token))
-    prepped = req.prepare()
-    prepped.body = call_cdr_json
-    prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
-    resp = s.send(prepped)
+    # s = requests.Session()
+    # req = requests.Request('POST', get_tropo_webhook(token))
+    # prepped = req.prepare()
+    # prepped.body = call_cdr_json
+    # prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
+    # resp = s.send(prepped)
+    resp = requests.post(get_tropo_webhook(token), data=call_cdr_json)
     if resp.status_code != 200:
         # print(log_prefix + 'failed cdr hook. call cdr. http status code {}'.format(resp.status_code))
         raise TropoFakerWebhookException(log_prefix + 'failed cdr hook. call cdr. http status code {}, cdr {}, response {}'.format(resp.status_code, call_cdr, resp.content))
@@ -424,12 +436,13 @@ def handle_sessionjob(sessjob: dict):
         "event": "cdrCreated"
     }
     transfer_cdr_json = json.dumps(transfer_cdr)
-    s = requests.Session()
-    req = requests.Request('POST', get_tropo_webhook(token))
-    prepped = req.prepare()
-    prepped.body = transfer_cdr_json
-    prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
-    resp = s.send(prepped)
+    # s = requests.Session()
+    # req = requests.Request('POST', get_tropo_webhook(token))
+    # prepped = req.prepare()
+    # prepped.body = transfer_cdr_json
+    # prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
+    # resp = s.send(prepped)
+    resp = requests.post(get_tropo_webhook(token), data=transfer_cdr_json)
     if resp.status_code != 200:
         # print('failed cdr hook, transfer cdr, http status code: {}'.format(resp.status_code))
         raise TropoFakerWebhookException('failed cdr hook, transfer cdr, http status code: {}, cdr: {}, response: {}'.format(resp.status_code, transfer_cdr, resp.content))
@@ -468,14 +481,15 @@ def handle_sessionjob(sessjob: dict):
         "id": "10faee98-a4ee-45a0-939e-cbc90a58f5c2",
         "event": "cdrRated"
     }
-    s = requests.Session()
-    req = requests.Request('POST', get_tropo_webhook(token))
-    prepped = req.prepare()
-    prepped.body = json.dumps(transfer_bill_cdr)
-    prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
-    resp = s.send(prepped)
+    transfer_bill_cdr_json = json.dumps(transfer_bill_cdr)
+    # s = requests.Session()
+    # req = requests.Request('POST', get_tropo_webhook(token))
+    # prepped = req.prepare()
+    # prepped.body = json.dumps(transfer_bill_cdr)
+    # prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
+    # resp = s.send(prepped)
+    resp = requests.post(get_tropo_webhook(token), data=transfer_bill_cdr_json)
     if resp.status_code != 200:
-        # print(log_prefix + 'cdr hook failed, transfer billing cdr, http status code: {}'.format(resp.status_code))
         raise TropoFakerWebhookException(
             log_prefix + 'cdr hook failed, transfer billing cdr, http status code: {}, cdr: {}, response: {}'.format(resp.status_code, transfer_bill_cdr, resp.content))
     # call bill cdr
@@ -513,14 +527,14 @@ def handle_sessionjob(sessjob: dict):
         "id": "60cd18c3-a550-4416-b56c-4aac23f75d91",
         "event": "cdrRated"
     }
-    s = requests.Session()
-    req = requests.Request('POST', get_tropo_webhook(token))
-    prepped = req.prepare()
-    prepped.body = json.dumps(call_bill_cdr)
-    prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
-    resp = s.send(prepped)
+    call_bill_cdr_json = json.dumps(call_bill_cdr)
+    # s = requests.Session()
+    # req = requests.Request('POST', get_tropo_webhook(token))
+    # prepped = req.prepare()
+    # prepped.body = json.dumps(call_bill_cdr)
+    # prepped.headers['Content-Type'] = 'application/json; charset=UTF-8'
+    # resp = s.send(prepped)
+    resp = requests.post(get_tropo_webhook(token), data=call_bill_cdr_json)
     if resp.status_code != 200:
-        # print('cdr hook failed. call bill cdr. http status code: {}'.format(resp.status_code))
         raise TropoFakerWebhookException('cdr hook failed. call bill cdr. http status code: {}, cdr: {}, response: {}'.format(resp.status_code, call_bill_cdr, resp.content))
-
     return True

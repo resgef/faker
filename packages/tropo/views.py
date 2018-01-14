@@ -23,7 +23,7 @@ def tropo_outcall_session_create(request):
     if not form.is_valid():
         return HttpResponseForbidden(form.errors.as_json())
 
-    params = form.cleaned_data.__dict__
+    params = form.cleaned_data
     token = params['token']
     sessid = generate_tropo_sessid(get_client_ip_address(request), token, params['command'], params['numberToDial'])
     print('faker: incoming session request, with params: {}, generated sessionid: {}'.format(params, sessid))

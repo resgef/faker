@@ -157,16 +157,10 @@ LOGGING = {
             'filters': ['require_debug_false'],
             'class': 'django.utils.log.AdminEmailHandler'
         },
-        'fakerlog': {
-            'level': ('DEBUG' if DEBUG else 'WARNING'),
+        'faker': {
+            'level': 'DEBUG',
             'class': 'logging.FileHandler',
-            'filename': '/var/log/asrivr/faker.log',
-            'formatter': 'file',
-        },
-        'tropo': {
-            'level': ('DEBUG' if DEBUG else 'WARNING'),
-            'class': 'logging.FileHandler',
-            'filename': '/var/log/asrivr/tropo.log',
+            'filename': '/var/log/faker/faker.log',
             'formatter': 'file',
         },
         'syslog': {
@@ -186,7 +180,7 @@ LOGGING = {
             'handlers': ['console'],
         },
         'tropo_outcall': {
-            'handlers': ['tropo', 'console']
+            'handlers': ['faker', 'console']
         }
     }
 
