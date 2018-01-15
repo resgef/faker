@@ -7,9 +7,19 @@ from timeit import default_timer as timer
 import logging
 from django.core.management.base import BaseCommand
 from django.conf import settings
-import pprint
+from tropo.utils import CannotProcessTransferException, TropoFakerWebhookException
+from bs4 import BeautifulSoup
+import os
+import time
 
 logger = logging.getLogger('tropo_outcall')
+
+
+def dump(filename, content):
+    filepath = os.path.join(settings.BASE_DIR, 'dump', filename)
+    with open(filepath, 'w') as f:
+        f.write(content)
+    return filepath
 
 
 class Command(BaseCommand):
@@ -34,24 +44,67 @@ class Command(BaseCommand):
             if not len(session_jobs):
                 self.stdout.write('no session jobs')
                 continue
+            else:
+                self.stdout.write('{} session jobs'.format(len(session_jobs)))
             logger.info('starting to process {} session jobs'.format(jobs_count_init))
             start_time = timer()
 
+            job_chunks = {}
+            counter = 0
+            for sessid, job in session_jobs.items():
+                job_chunks[sessid] = job
+                counter += 1
+                if counter >= SESSION_JOB_THREAD_LIMIT:
+                    break
+
+            print('chunk to process is : {}'.format(job_chunks))
+
             sessionds_done = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=SESSION_JOB_THREAD_LIMIT) as executor:
-                future_to_sessid = {executor.submit(handle_sessionjob, job): sessid for sessid, job in session_jobs.items()}
+                future_to_sessid = {executor.submit(handle_sessionjob, job): sessid for sessid, job in job_chunks.items()}
                 for future in concurrent.futures.as_completed(future_to_sessid):
                     sessid = future_to_sessid[future]
                     if future.exception():
-                        logger.error('exception: ' + str(future.exception()))
-                    if future.result():
-                        logger.debug('session#{} processing complete'.format(sessid))
-                        sessionds_done.append(sessid)
-                        del session_jobs[sessid]
-            end_time = timer()
-            logger.perf('sessions processed: {}, time taken: {} seconds'.format(len(sessionds_done), end_time - start_time))
+                        exception_text = str(future.exception())
+                        if bool(BeautifulSoup(exception_text, 'html.parser').find()):
+                            logger.error('exception: {}'.format(exception_text[:200]))
+                            dumpfile = dump(sessid + '.html', exception_text)
+                            self.stdout.write('exception text dumped into: {}'.format(dumpfile))
+                        else:
+                            logger.error('exception: ' + str(future.exception()))
+                    try:
+                        if future.result():
+                            logger.debug('session#{} processing complete'.format(sessid))
+                            sessionds_done.append(sessid)
 
-            if len(session_jobs):
-                r.set(settings.REDIS_KEY_OUTCALL_SESSION, json.dumps(session_jobs))
-            else:
-                r.delete(settings.REDIS_KEY_OUTCALL_SESSION)
+                    except CannotProcessTransferException as e:
+                        exception_text = str(e)
+                        if bool(BeautifulSoup(exception_text, 'html.parser').find()):
+                            logger.error('exception: {}'.format(exception_text[:200]))
+                            dumpfile = dump(sessid + '.html', exception_text)
+                            self.stdout.write('exception text dumped into: {}'.format(dumpfile))
+                        else:
+                            logger.error(str(e))
+                    except TropoFakerWebhookException as e:
+                        exception_text = str(e)
+                        if bool(BeautifulSoup(exception_text, 'html.parser').find()):
+                            logger.error('exception: {}'.format(exception_text[:200]))
+                            dumpfile = dump(sessid + '.html', exception_text)
+                            self.stdout.write('exception text dumped into: {}'.format(dumpfile))
+                        else:
+                            logger.error(str(e))
+
+                    del session_jobs[sessid]
+                    self.stdout.write('session id: {} removed from jobs to process'.format(sessid))
+                    if len(session_jobs):
+                        r.set(settings.REDIS_KEY_OUTCALL_SESSION, json.dumps(session_jobs))
+                    else:
+                        r.delete(settings.REDIS_KEY_OUTCALL_SESSION)
+            end_time = timer()
+            logger.perf('sessions processed: {}, jobs chunk size was: {} time taken: {} seconds'.format(len(sessionds_done), len(job_chunks), end_time - start_time))
+            time.sleep(1)
+
+            # if len(session_jobs):
+            #     r.set(settings.REDIS_KEY_OUTCALL_SESSION, json.dumps(session_jobs))
+            # else:
+            #     r.delete(settings.REDIS_KEY_OUTCALL_SESSION)

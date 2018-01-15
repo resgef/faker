@@ -22,7 +22,8 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.ERROR('session jobs entry key `{}` not created'.format(settings.REDIS_KEY_OUTCALL_SESSION)))
                     continue
 
-            session_jobs = json.loads(r.get(settings.REDIS_KEY_OUTCALL_SESSION).decode('utf-8'))  # type: dict
+            red_val = r.get(settings.REDIS_KEY_OUTCALL_SESSION)
+            session_jobs = json.loads(red_val.decode('utf-8'))  # type: dict
             jobs_count_init = len(session_jobs)
             if statuscode != 3 + jobs_count_init:
                 statuscode = 3 + jobs_count_init

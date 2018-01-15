@@ -180,7 +180,9 @@ LOGGING = {
             'handlers': ['console'],
         },
         'tropo_outcall': {
-            'handlers': ['faker', 'console']
+            'handlers': ['faker', 'console'],
+            'level': 'DEBUG',
+            'propagate': True
         }
     }
 
