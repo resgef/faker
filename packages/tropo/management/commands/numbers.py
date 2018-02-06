@@ -10,7 +10,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         count = options['count']
-        tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.csv', mode='w')
+        tfile = tempfile.NamedTemporaryFile(delete=False, suffix='_{}_numbers.csv'.format(count), mode='w')
         for num in range(0, count, 1):
             number = str(num).rjust(10, '0')
             tfile.write(number + '\n')

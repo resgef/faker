@@ -5,12 +5,11 @@ import concurrent.futures
 from tropo.settings import SESSION_JOB_THREAD_LIMIT
 from timeit import default_timer as timer
 import logging
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandParser
 from django.conf import settings
 from tropo.utils import CannotProcessTransferException, TropoFakerWebhookException
 from bs4 import BeautifulSoup
-import os
-import time
+import os, sys
 
 logger = logging.getLogger('tropo_outcall')
 
@@ -25,8 +24,8 @@ def dump(filename, content):
 class Command(BaseCommand):
     help = 'to process outbound (fake) call requests(sessions already created and saved in redis)'
 
-    def add_arguments(self, parser):
-        pass
+    def add_arguments(self, parser: CommandParser):
+        parser.add_argument('--one', dest='one', type=bool, help='process only one session')
 
     def handle(self, *args, **options):
         """
@@ -56,22 +55,14 @@ class Command(BaseCommand):
                 counter += 1
                 if counter >= SESSION_JOB_THREAD_LIMIT:
                     break
-
-            print('chunk to process is : {}'.format(job_chunks))
+                if options['one']:
+                    break
 
             sessionds_done = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=SESSION_JOB_THREAD_LIMIT) as executor:
                 future_to_sessid = {executor.submit(handle_sessionjob, job): sessid for sessid, job in job_chunks.items()}
                 for future in concurrent.futures.as_completed(future_to_sessid):
                     sessid = future_to_sessid[future]
-                    if future.exception():
-                        exception_text = str(future.exception())
-                        if bool(BeautifulSoup(exception_text, 'html.parser').find()):
-                            logger.error('exception: {}'.format(exception_text[:200]))
-                            dumpfile = dump(sessid + '.html', exception_text)
-                            self.stdout.write('exception text dumped into: {}'.format(dumpfile))
-                        else:
-                            logger.error('exception: ' + str(future.exception()))
                     try:
                         if future.result():
                             logger.debug('session#{} processing complete'.format(sessid))
@@ -102,9 +93,6 @@ class Command(BaseCommand):
                         r.delete(settings.REDIS_KEY_OUTCALL_SESSION)
             end_time = timer()
             logger.perf('sessions processed: {}, jobs chunk size was: {} time taken: {} seconds'.format(len(sessionds_done), len(job_chunks), end_time - start_time))
-            time.sleep(1)
 
-            # if len(session_jobs):
-            #     r.set(settings.REDIS_KEY_OUTCALL_SESSION, json.dumps(session_jobs))
-            # else:
-            #     r.delete(settings.REDIS_KEY_OUTCALL_SESSION)
+            if options['one']:
+                break

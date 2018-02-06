@@ -1,4 +1,4 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandParser
 import redis
 import time
 import json
@@ -8,8 +8,8 @@ from django.conf import settings
 class Command(BaseCommand):
     help = 'view current outcall sessions waiting to be processed'
 
-    def add_arguments(self, parser):
-        pass
+    def add_arguments(self, parser: CommandParser):
+        parser.add_argument('--clear', dest='clear', type=bool, help='clear sessions without processing them')
 
     def handle(self, *args, **options):
         # monkeypatching to prevent console flooding with stale messages
@@ -23,6 +23,8 @@ class Command(BaseCommand):
                     continue
 
             red_val = r.get(settings.REDIS_KEY_OUTCALL_SESSION)
+            if not red_val:
+                continue
             session_jobs = json.loads(red_val.decode('utf-8'))  # type: dict
             jobs_count_init = len(session_jobs)
             if statuscode != 3 + jobs_count_init:
@@ -30,5 +32,6 @@ class Command(BaseCommand):
                 self.stdout.write('{} session jobs'.format(jobs_count_init))
                 continue
 
-            # statuscode = 0
-            time.sleep(1)
+            if options['clear']:
+                self.stdout.write('clearing sessions')
+                r.delete(settings.REDIS_KEY_OUTCALL_SESSION)

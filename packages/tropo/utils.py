@@ -2,14 +2,12 @@ from django.http.request import HttpRequest
 import json
 import time
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import pytz
 from .settings import ISO8601
 import requests
 import os
 import logging
-import sys
-from django.conf import settings
 
 logger = logging.getLogger('tropo_outcall')
 
@@ -127,8 +125,13 @@ def get_continue_instructions(tropo_instructions: dict):
 class TropoFakerWebhookException(Exception):
     pass
 
+
 class CannotProcessTransferException(Exception):
     pass
+
+
+def to_tropo_datetime(datetime_obj: datetime):
+    return datetime_obj.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + '+0000'
 
 
 def handle_sessionjob(sessjob: dict):
@@ -156,7 +159,7 @@ def handle_sessionjob(sessjob: dict):
             'id': sessionid,
             'accountId': accountid,
             'applicationId': appid,
-            'timestamp': session_create_timestamp.__format__(ISO8601),
+            'timestamp': session_create_timestamp.strftime(ISO8601),
             'userType': 'NONE',
             'initialText': None,
             'callId': None,
@@ -182,7 +185,7 @@ def handle_sessionjob(sessjob: dict):
     ask1_ins = get_ask_instructions(instructions)
     ask1_name = ask1_ins['name']
     ask1_continue_ins = get_continue_instructions(instructions)
-    ask1_event_callback_url = os.path.dirname(voice_script) + '/' + ask1_continue_ins['next']
+    ask1_event_callback_url = os.path.dirname(voice_script).rstrip('/') + '/' + ask1_continue_ins['next'].lstrip('/')
     event_result = {
         "result": {
             "sessionId": sessionid,
@@ -213,13 +216,13 @@ def handle_sessionjob(sessjob: dict):
             log_prefix + 'cannot send back ask1 continue event data, http status code: {}, event data: {}, response: {}'.format(resp.status_code, event_result, resp.content))
     instructions_json = resp.content.decode('utf-8')
     instructions = json.loads(instructions_json)
-    print(instructions)
+    # print(instructions)
 
     # ask2
     ask2_ins = get_ask_instructions(instructions)
     ask2_continue_ins = get_continue_instructions(instructions)
     ask2_name = ask2_ins['name']
-    ask2_event_callback_url = os.path.dirname(voice_script) + '/' + ask2_continue_ins['next']
+    ask2_event_callback_url = os.path.dirname(voice_script).rstrip('/') + '/' + ask2_continue_ins['next'].lstrip('/')
     ask2_session_duration = 55
     ask2_event_result = {
         "result": {
@@ -257,7 +260,7 @@ def handle_sessionjob(sessjob: dict):
     ask3_ins = get_ask_instructions(instructions)
     ask3_continue_ins = get_continue_instructions(instructions)
     ask_name = ask3_ins['name']
-    ask3_event_callback_url = os.path.dirname(voice_script) + '/' + ask3_continue_ins['next']
+    ask3_event_callback_url = os.path.dirname(voice_script).rstrip('/') + '/' + ask3_continue_ins['next'].lstrip('/')
     ask3_session_duration = 74
     event_result = {
         "result": {
@@ -298,41 +301,115 @@ def handle_sessionjob(sessjob: dict):
     transfer_connected_duration = 30
     transfer_end_timestamp = session_create_timestamp + timedelta(seconds=transfer_session_duration)
     transfer_ins = get_transfer_instructions(instructions)
-    if not transfer_ins:
-        raise CannotProcessTransferException('cannot process transfer instructions because they are: {}, whole instruction was: {}'.format(transfer_ins, instructions))
-    transfer_continue_ins = get_continue_instructions(instructions)
-    transfer_from = transfer_ins['from']
-    transfer_to = transfer_ins['to']
-    transfer_name = transfer_ins['name']
-    transfer_label = transfer_ins['label']
-    transfer_continue_callback_url = os.path.dirname(voice_script) + '/' + transfer_continue_ins['next']
-    transfer_callid = generate_transfer_callid(callid, transfer_to)
-    transfer_sessid = generate_transfer_sessid(sessionid, transfer_to)
-    event_result = {
-        "result": {
-            "sessionId": transfer_sessid,
-            "callId": transfer_callid,
-            "state": "DISCONNECTED",
-            "sessionDuration": transfer_session_duration,
-            "sequence": 4,
-            "complete": True,
-            "error": None,
-            "calledid": transfer_to,
-            "actions": {
-                "name": transfer_name,
-                "duration": transfer_duration,
-                "connectedDuration": transfer_session_duration,
-                "disposition": "SUCCESS",
-                "timestamp": transfer_end_timestamp.__format__(ISO8601),
-                "calledid": transfer_from
+
+    if transfer_ins:
+        transfer_continue_ins = get_continue_instructions(instructions)
+        transfer_from = transfer_ins['from']
+        transfer_to = transfer_ins['to']
+        transfer_name = transfer_ins['name']
+        transfer_label = transfer_ins['label']
+        transfer_continue_callback_url = os.path.dirname(voice_script).rstrip('/') + '/' + transfer_continue_ins['next'].lstrip('/')
+        transfer_callid = generate_transfer_callid(callid, transfer_to)
+        event_result = {
+            "result": {
+                "sessionId": sessionid,
+                "callId": callid,
+                "state": "DISCONNECTED",
+                "sessionDuration": transfer_session_duration,
+                "sequence": 4,
+                "complete": True,
+                "error": None,
+                "calledid": transfer_to,
+                "actions": {
+                    "name": transfer_name,
+                    "duration": transfer_duration,
+                    "connectedDuration": transfer_session_duration,
+                    "disposition": "SUCCESS",
+                    "timestamp": transfer_end_timestamp.strftime(ISO8601),
+                }
             }
         }
-    }
-    event_result_json = json.dumps(event_result)
-    resp = requests.post(transfer_continue_callback_url, data=event_result_json)
-    if resp.status_code != 200:
-        raise TropoFakerWebhookException(
-            log_prefix + 'failed transfer continue event hook, http status code {}, event data {}, response {}'.format(resp.status_code, event_result, resp.content))
+        event_result_json = json.dumps(event_result)
+        resp = requests.post(transfer_continue_callback_url, data=event_result_json)
+        if resp.status_code != 200:
+            raise TropoFakerWebhookException(
+                log_prefix + 'failed transfer continue event hook, http status code {}, event data {}, response {}'.format(resp.status_code, event_result, resp.content))
+
+        # transfer cdr
+        transfer_cdr = {
+            "data": {
+                "callId": transfer_callid,
+                "applicationType": "tropo-web",
+                "messageCount": 0,
+                "parentCallId": callid,
+                "parentSessionId": sessionid,
+                "sessionId": sessionid,
+                "label": transfer_label,
+                "network": "PSTN",
+                "initiationTime": to_tropo_datetime(transfer_start_timestamp),
+                "duration": 33258,
+                "accountId": get_tropo_accountid(token),
+                "startUrl": voice_script,
+                "from": transfer_from,
+                "startTime": to_tropo_datetime(transfer_start_timestamp),
+                "to": "tel:{}".format(transfer_to),
+                "endTime": to_tropo_datetime(transfer_end_timestamp),
+                "applicationId": get_tropo_appid(token),
+                "eventTimeStamp": transfer_start_timestamp.timestamp(),
+                "applicationName": get_tropo_appname(token),
+                "direction": "out",
+                "status": "Success"
+            },
+            "resource": "call",
+            "name": "Tropo Webform Webhook",
+            "id": "c284f5ba-a1c5-4b01-bf86-7f85f700879b",
+            "event": "cdrCreated"
+        }
+        transfer_cdr_json = json.dumps(transfer_cdr)
+        resp = requests.post(get_tropo_webhook(token), data=transfer_cdr_json)
+        if resp.status_code != 200:
+            # print('failed cdr hook, transfer cdr, http status code: {}'.format(resp.status_code))
+            raise TropoFakerWebhookException('failed cdr hook, transfer cdr, http status code: {}, cdr: {}, response: {}'.format(resp.status_code, transfer_cdr, resp.content))
+        # transfer bill cdr
+        transfer_bill_cdr = {
+            "data": {
+                "reason": None,
+                "applicationType": "tropo-web",
+                "messageCount": 0,
+                "network": "PSTN",
+                "initiationTime": to_tropo_datetime(transfer_start_timestamp),
+                "duration": transfer_duration,
+                "startUrl": voice_script,
+                "from": transfer_from,
+                "startTime": to_tropo_datetime(transfer_start_timestamp),
+                "applicationName": get_tropo_appname(token),
+                "direction": "out",
+                "callId": transfer_callid,
+                "roundedDuration": 60,
+                "cost": 0,
+                "parentCallId": callid,
+                "created": to_tropo_datetime(transfer_start_timestamp),
+                "parentSessionId": sessionid,
+                "sessionId": sessionid,
+                "label": transfer_label,
+                "ratingVersion": 1,
+                "accountId": get_tropo_accountid(token),
+                "to": transfer_to,
+                "endTime": to_tropo_datetime(transfer_end_timestamp),
+                "previousCost": 0,
+                "applicationId": get_tropo_appid(token),
+                "status": "Success"
+            },
+            "resource": "call",
+            "name": "Tropo Webform Webhook",
+            "id": "10faee98-a4ee-45a0-939e-cbc90a58f5c2",
+            "event": "cdrRated"
+        }
+        transfer_bill_cdr_json = json.dumps(transfer_bill_cdr)
+        resp = requests.post(get_tropo_webhook(token), data=transfer_bill_cdr_json)
+        if resp.status_code != 200:
+            raise TropoFakerWebhookException(
+                log_prefix + 'cdr hook failed, transfer billing cdr, http status code: {}, cdr: {}, response: {}'.format(resp.status_code, transfer_bill_cdr, resp.content))
     # now send the cdrs
     # call cdr
     call_cdr = {
@@ -345,14 +422,14 @@ def handle_sessionjob(sessjob: dict):
             "sessionId": sessionid,
             "label": call_label,
             "network": "PSTN",
-            "initiationTime": session_create_timestamp.__format__(ISO8601),
+            "initiationTime": to_tropo_datetime(session_create_timestamp),
             "duration": 103002,
             "accountId": get_tropo_accountid(token),
             "startUrl": voice_script,
             "from": callerid,
-            "startTime": session_create_timestamp.__format__(ISO8601),
+            "startTime": to_tropo_datetime(session_create_timestamp),
             "to": "tel:{}".format(to),
-            "endTime": transfer_start_timestamp.__format__(ISO8601),
+            "endTime": to_tropo_datetime(transfer_start_timestamp),
             "applicationId": get_tropo_appid(token),
             "eventTimeStamp": session_create_timestamp.timestamp(),
             "applicationName": get_tropo_appname(token),
@@ -369,81 +446,7 @@ def handle_sessionjob(sessjob: dict):
     if resp.status_code != 200:
         # print(log_prefix + 'failed cdr hook. call cdr. http status code {}'.format(resp.status_code))
         raise TropoFakerWebhookException(log_prefix + 'failed cdr hook. call cdr. http status code {}, cdr {}, response {}'.format(resp.status_code, call_cdr, resp.content))
-    # transfer cdr
-    transfer_cdr = {
-        "data": {
-            "callId": transfer_callid,
-            "applicationType": "tropo-web",
-            "messageCount": 0,
-            "parentCallId": callid,
-            "parentSessionId": sessionid,
-            "sessionId": transfer_sessid,
-            "label": transfer_label,
-            "network": "PSTN",
-            "initiationTime": transfer_start_timestamp.__format__(ISO8601),
-            "duration": 33258,
-            "accountId": get_tropo_accountid(token),
-            "startUrl": voice_script,
-            "from": callerid,
-            "startTime": transfer_start_timestamp.__format__(ISO8601),
-            "to": "tel:{}".format(transfer_to),
-            "endTime": transfer_end_timestamp.__format__(ISO8601),
-            "applicationId": get_tropo_appid(token),
-            "eventTimeStamp": transfer_start_timestamp.timestamp(),
-            "applicationName": get_tropo_appname(token),
-            "direction": "out",
-            "status": "Success"
-        },
-        "resource": "call",
-        "name": "Tropo Webform Webhook",
-        "id": "c284f5ba-a1c5-4b01-bf86-7f85f700879b",
-        "event": "cdrCreated"
-    }
-    transfer_cdr_json = json.dumps(transfer_cdr)
-    resp = requests.post(get_tropo_webhook(token), data=transfer_cdr_json)
-    if resp.status_code != 200:
-        # print('failed cdr hook, transfer cdr, http status code: {}'.format(resp.status_code))
-        raise TropoFakerWebhookException('failed cdr hook, transfer cdr, http status code: {}, cdr: {}, response: {}'.format(resp.status_code, transfer_cdr, resp.content))
-    # transfer bill cdr
-    transfer_bill_cdr = {
-        "data": {
-            "reason": None,
-            "applicationType": "tropo-web",
-            "messageCount": 0,
-            "network": "PSTN",
-            "initiationTime": transfer_start_timestamp.__format__(ISO8601),
-            "duration": transfer_duration,
-            "startUrl": voice_script,
-            "from": callerid,
-            "startTime": transfer_start_timestamp.__format__(ISO8601),
-            "applicationName": get_tropo_appname(token),
-            "direction": "out",
-            "callId": transfer_callid,
-            "roundedDuration": 60,
-            "cost": 0,
-            "parentCallId": callid,
-            "created": transfer_start_timestamp.__format__(ISO8601),
-            "parentSessionId": sessionid,
-            "sessionId": transfer_sessid,
-            "label": transfer_label,
-            "ratingVersion": 1,
-            "accountId": get_tropo_accountid(token),
-            "to": transfer_to,
-            "endTime": transfer_end_timestamp.__format__(ISO8601),
-            "previousCost": 0,
-            "applicationId": get_tropo_appid(token),
-            "status": "Success"
-        },
-        "resource": "call",
-        "name": "Tropo Webform Webhook",
-        "id": "10faee98-a4ee-45a0-939e-cbc90a58f5c2",
-        "event": "cdrRated"
-    }
-    transfer_bill_cdr_json = json.dumps(transfer_bill_cdr)
-    resp = requests.post(get_tropo_webhook(token), data=transfer_bill_cdr_json)
-    if resp.status_code != 200:
-        raise TropoFakerWebhookException(
-            log_prefix + 'cdr hook failed, transfer billing cdr, http status code: {}, cdr: {}, response: {}'.format(resp.status_code, transfer_bill_cdr, resp.content))
+
     # call bill cdr
     call_bill_cdr = {
         "data": {
@@ -451,25 +454,25 @@ def handle_sessionjob(sessjob: dict):
             "applicationType": "tropo-web",
             "messageCount": 0,
             "network": "PSTN",
-            "initiationTime": session_create_timestamp.__format__(ISO8601),
+            "initiationTime": to_tropo_datetime(session_create_timestamp),
             "duration": 104,
             "startUrl": voice_script,
             "from": callerid,
-            "startTime": session_create_timestamp.__format__(ISO8601),
+            "startTime": to_tropo_datetime(session_create_timestamp),
             "applicationName": get_tropo_appname(token),
             "direction": "out",
             "callId": callid,
             "roundedDuration": 120,
             "cost": 0,
             "parentCallId": "none",
-            "created": datetime.now(pytz.UTC).__format__(ISO8601),
+            "created": to_tropo_datetime(datetime.now(pytz.UTC)),
             "parentSessionId": "none",
             "sessionId": sessionid,
             "label": call_label,
             "ratingVersion": 1,
             "accountId": get_tropo_accountid(token),
             "to": to,
-            "endTime": transfer_start_timestamp.__format__(ISO8601),
+            "endTime": to_tropo_datetime(transfer_start_timestamp),
             "previousCost": 0,
             "applicationId": get_tropo_appid(token),
             "status": "Success"

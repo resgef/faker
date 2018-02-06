@@ -23,4 +23,4 @@ TROPO_ACCOUNTS = [
 ]
 
 ISO8601 = '%Y-%m-%dT%H:%M:%S.%fZ'  # which is tropo timestamp format
-SESSION_JOB_THREAD_LIMIT = 200
+SESSION_JOB_THREAD_LIMIT = 50
