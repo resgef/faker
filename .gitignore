@@ -1,0 +1,7 @@
+env/
+.idea/
+dump/
+!dump/.gitkeep
+tests/
+*.pyc
+logs/*.log
